@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: locust-master
+spec:
+  selector:
+    app: locust-master
+  ports:
+  - protocol: TCP
+    port: 8089 # Service port
+    targetPort: 8089 # Container port
+    name: locust-master-webui
+  - protocol: TCP
+    port: 5557
+    targetPort: 5557
+    name: locust-master-control
+#  - protocol: TCP
+#    port: 8001
+#    targetPort: 8001
+#    name: locust-prometheus-client
+#  type: LoadBalancer # Or ClusterIP depending on your needs
+  type: ClusterIP
