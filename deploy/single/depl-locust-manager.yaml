@@ -18,32 +18,32 @@ spec:
         args: ["-f", "$(TEST_CASE)"]
         ports:
         - containerPort: 8089 # Replace with your application's port
-#        lifecycle:
-#          postStart:
-#            exec:
-#              command: [ "bash", "-c", "python -m pip install confluent-kafka;" ]
+          #        lifecycle:
+          #          postStart:
+          #            exec:
+          #              command: [ "bash", "-c", "python -m pip install confluent-kafka;" ]
         volumeMounts:
         - name: kafka-auth
           mountPath: /test/kafka-auth # Mount path inside the container
         - name: locust-tasks
           mountPath: /test/locust-tasks
         env:
-          - name: KAFKA_BOOTSTRAP_SERVERS
-            value: "daisy-kafka-kafka-bootstrap.kafka.svc.cluster.local:9093"
-          - name: KAFKA_TOPIC
-            value: "demo-topic"
-          - name: KAFKA_SECURITY_PROTOCAL
-            value: "SSL"
-          - name: KAFKA_CA_LOCATION
-            value: "/test/kafka-auth/ca.crt"
-          - name: KAFKA_CERT_LOCATION
-            value: "/test/kafka-auth/user.crt"
-          - name: KAFKA_KEY_LOCATION
-            value: "/test/kafka-auth/user.key"
-          - name: KAFKA_BATCH_SIZE
-            value: "65536"
-          - name: TEST_CASE
-            value: "/test/locust-tasks/exp3.py"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "daisy-kafka-kafka-bootstrap.kafka.svc.cluster.local:9093"
+        - name: KAFKA_TOPIC
+          value: "demo-topic"
+        - name: KAFKA_SECURITY_PROTOCAL
+          value: "SSL"
+        - name: KAFKA_CA_LOCATION
+          value: "/test/kafka-auth/ca.crt"
+        - name: KAFKA_CERT_LOCATION
+          value: "/test/kafka-auth/user.crt"
+        - name: KAFKA_KEY_LOCATION
+          value: "/test/kafka-auth/user.key"
+        - name: KAFKA_BATCH_SIZE
+          value: "65536"
+        - name: TEST_CASE
+          value: "/test/locust-tasks/exp3.py"
       volumes:
       - name: kafka-auth
         configMap:
