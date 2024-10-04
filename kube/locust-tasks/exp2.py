@@ -1,12 +1,12 @@
 import locust
 import requests
 import random
-from locust import HttpUser, task, constant, between
-from locust.stats import stats_printer
+from locust import HttpUser, task, between
 from locust.contrib.locust_plugins import CustomMetrics
 from locust.contrib.fail_fast import FailFast
 from tenacity import retry, stop_after_attempt, wait_fixed
 import json
+import string  
 
 
 class MessageMetrics(CustomMetrics):
@@ -21,10 +21,7 @@ class MessageMetrics(CustomMetrics):
         self.total_requests = 0
         self.request_failures = 0
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_fixed(1),
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
     def log(
         self,
         request_type,
@@ -51,7 +48,6 @@ class MessageMetrics(CustomMetrics):
             self.request_failures += 1
 
     def calculate_throughput(self):
-
         if not self.environment.elapsed_time:
             return 0
         return self.total_requests / self.environment.elapsed_time
@@ -78,33 +74,36 @@ class MyTaskSet(locust.TaskSet):
 
     @task(weight=2)
     def produce_message(self):
+        topic = random.choice(self.producer_topics)
 
-        topic = self.producer_topics[
-            self.random.randint(0, len(self.producer_topics) - 1)
-        ]
-        message = {"message": f"Hello, Dipoo from {topic}"}
+        # Generate random JSON data with size between 1 KB and 100 KB
+        data_size = random.randint(1024, 1024 * 100) 
+        random_data = "".join(
+            random.choice(string.ascii_letters + string.digits)
+            for _ in range(data_size)
+        )
+        message = {"data": random_data}
 
         try:
             response = self.client.post(f"topics/{topic}", json=message)
             response.raise_for_status()
-
-            self.environment.metrics.message_latencies.append(response.elapsed_time)
+            self.environment.metrics.message_latencies.append(
+                response.elapsed.total_seconds()
+            )
             self.environment.metrics.message_sizes.append(len(json.dumps(message)))
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error producing message to {topic}: {e}")
 
     @task(weight=1)
     def consume_message(self):
-
-        topic = self.consumer_topics[
-            self.random.randint(0, len(self.consumer_topics) - 1)
-        ]
+        topic = random.choice(self.consumer_topics)
 
         try:
             response = self.client.get(f"topics/{topic}")
             response.raise_for_status()
-
-            self.environment.metrics.message_latencies.append(response.elapsed_time)
+            self.environment.metrics.message_latencies.append(
+                response.elapsed.total_seconds()
+            )
             self.environment.metrics.message_sizes.append(len(response.content))
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error consuming message from {topic}: {e}")
