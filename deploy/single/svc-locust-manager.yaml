@@ -16,4 +16,4 @@ spec:
 #    targetPort: 8001
 #    name: locust-prometheus-client
 #  type: LoadBalancer # Or ClusterIP depending on your needs
-  type: ClusterIP
+  type: LoadBalancer
