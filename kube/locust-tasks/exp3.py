@@ -5,6 +5,8 @@ import json
 import signal
 from locust import User, task, between
 from locust.env import Environment
+import random
+import string
 import subprocess
 try:
     from confluent_kafka import Producer, KafkaError, Consumer, KafkaException
@@ -26,6 +28,11 @@ LATENCY = Summary("message_latency_seconds", "Latency of messages")
 CONSUMER_LAG = Gauge("consumer_lag", "Consumer lag in messages")
 
 
+def generate_random_text(size) -> str:
+    characters = string.ascii_letters + string.digits + string.punctuation
+    return ''.join(random.choice(characters) for i in range(size))
+
+
 class KafkaUser(User):
     wait_time = between(1, 5)
 
@@ -33,6 +40,9 @@ class KafkaUser(User):
         super().__init__(environment, **kwargs)
         self.KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
         self.KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "demo-topic")
+        self.KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "perf-test")
+        self.KAFKA_MSG_SIZE = int(os.getenv("KAFKA_MSG_SIZE", "1024"))
+        self.KAFKA_MSG_NUMBER_PER_USER = int(os.getenv("KAFKA_MSG_NUMBER_PER_USER", "1000"))
         self.KAFKA_SECURITY_PROTOCAL = os.getenv("KAFKA_SECURITY_PROTOCAL", "PLAINTEXT")
         self.KAFKA_CA_LOCATION = os.getenv("KAFKA_CA_LOCATION", "/test/kafka-auth/ca.crt")
         self.KAFKA_CERT_LOCATION = os.getenv("KAFKA_CERT_LOCATION", "/test/kafka-auth/user.crt")
@@ -47,8 +57,7 @@ class KafkaUser(User):
         }
         self.consumer_config = {
             "bootstrap.servers": self.KAFKA_BOOTSTRAP_SERVERS,
-            # "group.id": "locust_group",
-            "group.id": "demo-group",
+            "group.id": self.KAFKA_CONSUMER_GROUP,
             "auto.offset.reset": "earliest"
         }
         if self.KAFKA_SECURITY_PROTOCAL != "PLAINTEXT":
@@ -75,9 +84,9 @@ class KafkaUser(User):
     @task
     @REQUEST_TIME.time()
     def send_kafka_message(self):
-        timestamp = time.time()
-        message = f"Hello from Locust at {timestamp}"
-        message_size = len(message.encode("utf-8"))
+        # message = f"Hello from Locust at {timestamp}"
+        # message_size = len(message.encode("utf-8"))
+        message_size = self.KAFKA_MSG_SIZE
 
         def delivery_report(err, msg):
             if err is not None:
@@ -92,9 +101,7 @@ class KafkaUser(User):
                     exception=err,
                 )
             else:
-                response_time = time.time() - float(
-                    msg.value().decode("utf-8").split()[-1]
-                )
+                response_time = time.time() - start_time
                 self.successful_requests += 1
                 SUCCESSFUL_REQUESTS.inc()
                 LATENCY.observe(response_time)
@@ -110,57 +117,60 @@ class KafkaUser(User):
                     exception=None,
                     context=None,
                 )
-
-        try:
-            self.producer.produce(
-                self.KAFKA_TOPIC, message.encode("utf-8"), callback=delivery_report
-            )
-            self.producer.poll(0)
-        except KafkaError as e:
-            self.logger.error("Kafka error: %s", e)
-            self.failed_requests += 1
-            FAILED_REQUESTS.inc()
-            self.environment.events.request.fire(
-                request_type="send_kafka_message",
-                name="Kafka",
-                response_time=0,
-                response_length=0,
-                exception=e,
-                context=None,
-            )
-
-    @task
-    def consume_kafka_message(self):
-        try:
-            msg = self.consumer.poll(timeout=1.0)
-            if msg is None:
-                return
-            if msg.error():
-                if msg.error().code() == KafkaError._PARTITION_EOF:
-                    self.logger.info(
-                        "End of partition reached %s %d %d",
-                        msg.topic(),
-                        msg.partition(),
-                        msg.offset(),
-                    )
-                elif msg.error():
-                    raise KafkaException(msg.error())
-            else:
-                message = msg.value().decode("utf-8")
-                self.logger.info(f"Consumed message: {message}")
-                try:
-                    parts = message.split()
-                    if len(parts) < 5:
-                        raise ValueError("Unexpected message format")
-                    timestamp = float(parts[-1])
-                    response_time = time.time() - timestamp
-                    LATENCY.observe(response_time)
-                    CONSUMER_LAG.set(msg.offset())
-                except ValueError as e:
-                    self.logger.error(f"Error parsing message timestamp: {e}")
-                    self.logger.error(f"Message content: {message}")
-        except KafkaException as e:
-            self.logger.error("Kafka error: %s", e)
+        for n in range(self.KAFKA_MSG_NUMBER_PER_USER):
+            try:
+                start_time = time.time()
+                message = generate_random_text(self.KAFKA_MSG_SIZE)
+                self.producer.produce(
+                    self.KAFKA_TOPIC, message.encode("utf-8"), callback=delivery_report
+                )
+                self.producer.poll(0)
+            except KafkaError as e:
+                self.logger.error("Kafka error: %s", e)
+                self.failed_requests += 1
+                FAILED_REQUESTS.inc()
+                self.environment.events.request.fire(
+                    request_type="send_kafka_message",
+                    name="Kafka",
+                    response_time=0,
+                    response_length=0,
+                    exception=e,
+                    context=None,
+                )
+            self.producer.flush()
+    #
+    # @task
+    # def consume_kafka_message(self):
+    #     try:
+    #         msg = self.consumer.poll(timeout=1.0)
+    #         if msg is None:
+    #             return
+    #         if msg.error():
+    #             if msg.error().code() == KafkaError._PARTITION_EOF:
+    #                 self.logger.info(
+    #                     "End of partition reached %s %d %d",
+    #                     msg.topic(),
+    #                     msg.partition(),
+    #                     msg.offset(),
+    #                 )
+    #             elif msg.error():
+    #                 raise KafkaException(msg.error())
+    #         else:
+    #             message = msg.value().decode("utf-8")
+    #             self.logger.info(f"Consumed message: {message}")
+    #             try:
+    #                 parts = message.split()
+    #                 if len(parts) < 5:
+    #                     raise ValueError("Unexpected message format")
+    #                 timestamp = float(parts[-1])
+    #                 response_time = time.time() - timestamp
+    #                 LATENCY.observe(response_time)
+    #                 CONSUMER_LAG.set(msg.offset())
+    #             except ValueError as e:
+    #                 self.logger.error(f"Error parsing message timestamp: {e}")
+    #                 self.logger.error(f"Message content: {message}")
+    #     except KafkaException as e:
+    #         self.logger.error("Kafka error: %s", e)
 
     def on_stop(self):
         self.producer.flush()
